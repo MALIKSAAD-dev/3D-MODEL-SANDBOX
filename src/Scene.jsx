@@ -38,8 +38,8 @@ function AgentSoldier({ agent, index }) {
     const path = walkingPaths[agent.id];
 
     if (isWalking && path && path.length > 1) {
-      // Animate along walking path
-      walkRef.current.time += delta * 3.5 * gameSpeed;
+      // Animate along walking path (4.2 steps per second syncs with the 250ms/step logic duration + buffer)
+      walkRef.current.time += delta * 4.2 * gameSpeed;
       const stepIdx = Math.min(Math.floor(walkRef.current.time), path.length - 1);
       const nextIdx = Math.min(stepIdx + 1, path.length - 1);
       const t = walkRef.current.time - stepIdx;

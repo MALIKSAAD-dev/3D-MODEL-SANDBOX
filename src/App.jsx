@@ -1,5 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useGameStore, MODES, ALL_MODELS } from './store';
+import { Play, Square, Users, Terminal, Activity, Skull, Maximize, Minimize, RefreshCw, AlertTriangle, Crosshair, Shield, Target, Menu, ChevronUp, ChevronDown } from 'lucide-react';
+
 
 class ErrorBoundary extends React.Component {
   constructor(props) {
@@ -106,7 +108,7 @@ function Scoreboard() {
 function CollapseAlert() {
   const c = useGameStore(s => s.activeCollapse);
   if (!c) return null;
-  return <div className="alert-overlay collapse-alert">💀 SPATIAL COLLAPSE — Turn {c.turn} — {c.label} tried {c.badCoord}</div>;
+  return <div className="alert-overlay collapse-alert"><Skull size={14} style={{ display: 'inline', verticalAlign: 'middle', marginRight: '6px' }} /> SPATIAL COLLAPSE — Turn {c.turn} — {c.label} tried {c.badCoord}</div>;
 }
 
 // ─── Mode Selector ───
@@ -201,10 +203,32 @@ function AgentStatusBoard() {
             <span className="agent-model">{sn(a.model)}</span>
             <span className="agent-pos">({a.x},{a.y})</span>
             <span className="agent-acc" style={{ color: acc >= 90 ? '#4ade80' : '#f97316' }}>{acc}%</span>
-            {!a.alive && <span className="agent-dead-tag">☠</span>}
+            {!a.alive && <span className="agent-dead-tag"><Skull size={12} /></span>}
           </div>
         );
       })}
+    </div>
+  );
+}
+
+// ─── Countdown Overlay ───
+function CountdownOverlay({ value, hunterModel, preyModel }) {
+  if (value === null) return null;
+  const isGo = value === 'GO!';
+  const showNames = value === '';
+  return (
+    <div className="countdown-overlay">
+      {showNames ? (
+        <div className="countdown-matchup">
+          <span className="countdown-model hunter-model">{hunterModel}</span>
+          <span className="countdown-vs">VS</span>
+          <span className="countdown-model prey-model">{preyModel}</span>
+        </div>
+      ) : (
+        <div className={`countdown-number ${isGo ? 'countdown-go' : ''}`} key={value}>
+          {value}
+        </div>
+      )}
     </div>
   );
 }
@@ -216,6 +240,19 @@ export default function App() {
   const [showLogs, setShowLogs] = useState(false);
   const [showAnalytics, setShowAnalytics] = useState(false);
   const [showAgents, setShowAgents] = useState(false);
+  const [countdown, setCountdown] = useState(null);
+  const [matchupNames, setMatchupNames] = useState({ hunter: '', prey: '' });
+  
+  const audioRef = useRef(null);
+  useEffect(() => {
+    if (audioRef.current) {
+      if (gameState === 'running') {
+        audioRef.current.play().catch(e => console.warn("Audio play blocked", e));
+      } else {
+        audioRef.current.pause();
+      }
+    }
+  }, [gameState]);
 
   const logs = useGameStore(s => s.logs);
   const logRef = useRef(null);
@@ -226,11 +263,90 @@ export default function App() {
   const isRunning = gameState === 'running';
   const isFinished = gameState === 'hunter_wins' || gameState === 'prey_escapes';
 
+  // ─── Game Start with Countdown + Voice ───
+  const handleStart = () => {
+    if (!apiKey || countdown !== null) return;
+
+    // Get clean model names (brand only, no numbers)
+    const store = useGameStore.getState();
+    const cleanName = (id) => {
+      let name = id.split('/').pop();
+      name = name.replace(/-instruct.*/, '').replace(/-versatile/, '').replace(/-instant/, '');
+      name = name.replace(/[\d.]+[bB]?/g, '').replace(/--+/g, '-').replace(/^-|-$/g, '');
+      name = name.replace(/-/g, ' ').trim();
+      if (!name) name = id.split('/').pop();
+      return name.charAt(0).toUpperCase() + name.slice(1);
+    };
+    const hModel = cleanName(store.hunterModels[0] || 'llama-3.3-70b-versatile');
+    const pModel = cleanName(store.preyModels[0] || 'llama-3.3-70b-versatile');
+
+    // Show model names on screen immediately
+    setMatchupNames({ hunter: hModel, prey: pModel });
+    setCountdown('');  // Show overlay with names but no number yet
+
+    // Sound effect helper for countdown beeps
+    const playBeep = (freq) => {
+      try {
+        const AudioCtx = window.AudioContext || window.webkitAudioContext;
+        const ctx = new AudioCtx();
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(freq, ctx.currentTime);
+        gain.gain.setValueAtTime(0.5, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.3);
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start();
+        osc.stop(ctx.currentTime + 0.3);
+      } catch (e) { console.warn("Beep failed", e); }
+    };
+
+    // Start countdown after voice finishes
+    const beginCountdown = () => {
+      setCountdown(3);
+      playBeep(440); // A4
+      setTimeout(() => { setCountdown(2); playBeep(440); }, 1000);
+      setTimeout(() => { setCountdown(1); playBeep(440); }, 2000);
+      setTimeout(() => { setCountdown('GO!'); playBeep(880); }, 3000); // A5 (higher pitch for GO)
+      setTimeout(() => {
+        setCountdown(null);
+        startGame();
+      }, 4000);
+    };
+
+    // Voice announcement — countdown starts when speech ends
+    try {
+      const utterance = new SpeechSynthesisUtterance(`${hModel} versus ${pModel}`);
+      utterance.rate = 0.85;
+      utterance.pitch = 0.8;
+      utterance.volume = 1;
+      let started = false;
+      utterance.onend = () => {
+        if (!started) { started = true; setTimeout(beginCountdown, 400); }
+      };
+      utterance.onerror = () => {
+        if (!started) { started = true; setTimeout(beginCountdown, 400); }
+      };
+      speechSynthesis.cancel();
+      speechSynthesis.speak(utterance);
+      // Fallback in case onend never fires
+      setTimeout(() => {
+        if (!started) { started = true; beginCountdown(); }
+      }, 5000);
+    } catch (e) {
+      console.warn('TTS unavailable', e);
+      setTimeout(beginCountdown, 800);
+    }
+  };
+
   return (
     <div className={`app-container ${fullscreen ? 'fullscreen-mode' : ''}`}>
+      <audio ref={audioRef} src="/music.mp3" loop preload="auto" />
       <div className="canvas-wrapper"><Scene /></div>
 
       <CollapseAlert />
+      <CountdownOverlay value={countdown} hunterModel={matchupNames.hunter} preyModel={matchupNames.prey} />
 
       <div className="ui-overlay">
         {!fullscreen && (
@@ -250,21 +366,19 @@ export default function App() {
               <div style={{ display: 'flex', gap: '4px' }}>
                 <input type="number" value={maxTurns} onChange={e => setMaxTurns(parseInt(e.target.value) || 100)} className="glass-input" style={{ width: '60px', textAlign: 'center' }} title="Max Turns" disabled={isRunning} />
                 <span style={{ fontSize: '0.65rem', alignSelf: 'center', color: '#888' }}>Turns</span>
-                <input type="number" value={maxMoves} onChange={e => setMaxMoves(parseInt(e.target.value) || 8)} className="glass-input" style={{ width: '50px', textAlign: 'center', marginLeft: '4px' }} title="Max Cells per Turn" disabled={isRunning} />
-                <span style={{ fontSize: '0.65rem', alignSelf: 'center', color: '#888' }}>Dist</span>
               </div>
 
               {isRunning ? (
-                <button className="btn stop" onClick={stopGame}>■ Stop</button>
+                <button className="btn stop" onClick={stopGame}><Square size={14}/> Stop</button>
               ) : (
-                <button className="btn play" onClick={startGame} disabled={!apiKey}>▶ {isFinished ? 'Rematch' : 'Start'}</button>
+                <button className="btn play" onClick={handleStart} disabled={!apiKey || countdown !== null}>{isFinished ? <><RefreshCw size={14}/> Rematch</> : <><Play size={14}/> Start</>}</button>
               )}
             </div>
             <div className="status-section">
-              <span className={`status-badge ${gameState}`}>
-                {gameState === 'hunter_wins' ? '🔴 HUNTERS WIN' : gameState === 'prey_escapes' ? '🔵 PREY ESCAPES' :
-                    gameState === 'running' ? `⚡ T${turn}/${maxTurns}` :
-                      gameState === 'error' ? '⚠ ERROR' : '● READY'}
+              <span className={`status-badge ${gameState}`} style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                {gameState === 'hunter_wins' ? <><Crosshair size={12}/> HUNTERS WIN</> : gameState === 'prey_escapes' ? <><Shield size={12}/> PREY ESCAPES</> :
+                    gameState === 'running' ? <><Activity size={12}/> T{turn}/{maxTurns}</> :
+                      gameState === 'error' ? <><AlertTriangle size={12}/> ERROR</> : <><Target size={12}/> READY</>}
               </span>
             </div>
           </div>
@@ -278,23 +392,23 @@ export default function App() {
         )}
 
         <button className="fullscreen-btn glass-panel" onClick={toggleFullscreen}>
-          {fullscreen ? '✕' : '⛶'}
+          {fullscreen ? <Minimize size={18} /> : <Maximize size={18} />}
         </button>
 
         {fullscreen && (
           <div className="fs-status glass-panel">
-            <span className={`status-badge ${gameState}`}>
-              {gameState === 'hunter_wins' ? '🔴 HUNTERS WIN' : gameState === 'prey_escapes' ? '🔵 PREY ESCAPES' :
-                gameState === 'match_over' ? '🏆 MATCH OVER' : gameState === 'running' ? `⚡ TURN ${turn}/${maxTurns}` : '● READY'}
+            <span className={`status-badge ${gameState}`} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              {gameState === 'hunter_wins' ? <><Crosshair size={14}/> HUNTERS WIN</> : gameState === 'prey_escapes' ? <><Shield size={14}/> PREY ESCAPES</> :
+                gameState === 'match_over' ? <><Target size={14}/> MATCH OVER</> : gameState === 'running' ? <><Activity size={14}/> TURN {turn}/{maxTurns}</> : <><Target size={14}/> READY</>}
             </span>
           </div>
         )}
 
         {!fullscreen && (
           <div className="bottom-tabs">
-            <button className={`tab-btn ${showAgents ? 'active' : ''}`} onClick={() => setShowAgents(!showAgents)}>👥 Agents {showAgents ? '▼' : '▲'}</button>
-            <button className={`tab-btn ${showLogs ? 'active' : ''}`} onClick={() => setShowLogs(!showLogs)}>📋 Logs {showLogs ? '▼' : '▲'}</button>
-            <button className={`tab-btn analytics-tab ${showAnalytics ? 'active' : ''}`} onClick={() => setShowAnalytics(!showAnalytics)}>📊 Analytics {showAnalytics ? '▼' : '▲'}</button>
+            <button className={`tab-btn ${showAgents ? 'active' : ''}`} onClick={() => setShowAgents(!showAgents)} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}><Users size={14} /> Agents {showAgents ? <ChevronDown size={14}/> : <ChevronUp size={14}/>}</button>
+            <button className={`tab-btn ${showLogs ? 'active' : ''}`} onClick={() => setShowLogs(!showLogs)} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}><Terminal size={14} /> Logs {showLogs ? <ChevronDown size={14}/> : <ChevronUp size={14}/>}</button>
+            <button className={`tab-btn analytics-tab ${showAnalytics ? 'active' : ''}`} onClick={() => setShowAnalytics(!showAnalytics)} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}><Activity size={14} /> Analytics {showAnalytics ? <ChevronDown size={14}/> : <ChevronUp size={14}/>}</button>
           </div>
         )}
 

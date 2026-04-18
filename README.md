@@ -1,6 +1,8 @@
 # 🚀 3D-MODEL-SANDBOX (Agentic Sandbox)
 
-Welcome to the **3D-MODEL-SANDBOX**, an interactive and visually stunning 3D environment for simulating and observing LLM-driven agents! Watch as AI models navigate dynamic, spatial puzzles as Hunters and Prey in real-time.
+**A Collaborative Simulation Engine by Saad & Aurang**
+
+Welcome to the **3D-MODEL-SANDBOX**, a state-of-the-art interactive 3D environment designed to simulate and analyze LLM-driven agent architectures. Co-created by **Saad** and **Aurang**, this project merges advanced React Three Fiber visuals with intricate game theory algorithms. Watch as autonomous AI models intelligently navigate dynamic, spatial mazes, making real-time tactical decisions in complex Hunter vs. Prey scenarios.
 
 ---
 

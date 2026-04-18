@@ -48,26 +48,50 @@ Reachable cells (within ${maxMoves} steps): ${reachStr}
 
 Choose target. JSON only.`;
 
-  const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-    method: 'POST',
-    headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      model,
-      messages: [{ role: 'system', content: systemPrompt }, { role: 'user', content: userPrompt }],
-      temperature: 0.85,
-      ...(model.includes('llama-3') ? { response_format: { type: "json_object" } } : {})
-    })
-  });
+  let lastError = null;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model,
+        messages: [{ role: 'system', content: systemPrompt }, { role: 'user', content: userPrompt }],
+        temperature: 0.85,
+        ...(model.includes('llama-3') ? { response_format: { type: "json_object" } } : {})
+      })
+    });
 
-  const data = await res.json();
-  if (data.error) throw new Error(data.error.message || data.error.type || JSON.stringify(data.error));
-  if (!data.choices?.[0]) throw new Error('No response');
+    // Auth error — invalid API key, stop the game
+    if (res.status === 401) {
+      throw new Error('AUTH_INVALID: Invalid API key. Please check your Groq API key.');
+    }
 
-  const content = data.choices[0].message.content;
-  try { return JSON.parse(content); } catch (e) {
-    const m = content.match(/\{[\s\S]*"target_x"[\s\S]*\}/);
-    if (m) try { return JSON.parse(m[0]); } catch (e2) {}
-    const rand = allValidCells[Math.floor(Math.random() * allValidCells.length)];
-    return { thought: "Parse error", target_x: rand.x, target_y: rand.y };
+    // Rate limit — wait and retry
+    if (res.status === 429) {
+      const retryData = await res.json().catch(() => ({}));
+      const retryMsg = retryData?.error?.message || '';
+      const waitMatch = retryMsg.match(/try again in ([\d.]+)s/i);
+      const waitSec = waitMatch ? parseFloat(waitMatch[1]) : (3 + attempt * 3);
+      console.warn(`Rate limited (attempt ${attempt + 1}/3), waiting ${waitSec.toFixed(1)}s...`);
+      await new Promise(r => setTimeout(r, waitSec * 1000));
+      lastError = retryMsg || 'Rate limited';
+      continue;
+    }
+
+    const data = await res.json();
+    if (data.error) throw new Error(data.error.message || data.error.type || JSON.stringify(data.error));
+    if (!data.choices?.[0]) throw new Error('No response');
+
+    const content = data.choices[0].message.content;
+    try { return JSON.parse(content); } catch (e) {
+      const m = content.match(/\{[\s\S]*"target_x"[\s\S]*\}/);
+      if (m) try { return JSON.parse(m[0]); } catch (e2) {}
+      // Parse failed — fallback to random
+      const rand = allValidCells[Math.floor(Math.random() * allValidCells.length)];
+      return { thought: "Parse error — random fallback", target_x: rand.x, target_y: rand.y };
+    }
   }
+  // All retries exhausted (rate limit) — fallback to random move so game continues
+  const rand = allValidCells[Math.floor(Math.random() * allValidCells.length)];
+  return { thought: `Rate limited: ${lastError} — random fallback`, target_x: rand.x, target_y: rand.y };
 }

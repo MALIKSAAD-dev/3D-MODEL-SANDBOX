@@ -1,7 +1,7 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;700&display=swap');
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
-body, html { width: 100vw; height: 100vh; overflow: hidden; font-family: 'Inter', system-ui, sans-serif; background: #030303; color: #fff; }
+body, html { width: 100vw; height: 100vh; overflow: hidden; font-family: 'Inter', system-ui, sans-serif; background: linear-gradient(135deg, #09090b 0%, #1c1c22 100%); color: #fafafa; }
 #root { width: 100%; height: 100%; }
 .app-container { position: relative; width: 100%; height: 100%; }
 .canvas-wrapper { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 1; }
@@ -9,9 +9,9 @@ body, html { width: 100vw; height: 100vh; overflow: hidden; font-family: 'Inter'
 
 .glass-panel {
   pointer-events: auto;
-  background: rgba(18, 18, 22, 0.82);
+  background: rgba(24, 24, 28, 0.65);
   backdrop-filter: blur(24px); -webkit-backdrop-filter: blur(24px);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 14px;
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
 }
@@ -33,14 +33,14 @@ body, html { width: 100vw; height: 100vh; overflow: hidden; font-family: 'Inter'
 
 .btn { display: flex; align-items: center; gap: 5px; padding: 6px 14px; border: none; border-radius: 8px; font-size: 0.8rem; font-weight: 600; cursor: pointer; transition: all 0.2s; }
 .btn:disabled { opacity: 0.4; cursor: not-allowed; }
-.btn.play { background: #3b82f6; color: #fff; }
-.btn.play:hover:not(:disabled) { background: #2563eb; box-shadow: 0 0 12px rgba(59,130,246,0.4); }
+.btn.play { background: #f97316; color: #fff; }
+.btn.play:hover:not(:disabled) { background: #ea580c; box-shadow: 0 0 12px rgba(249,115,22,0.4); }
 .btn.stop { background: #ef4444; color: #fff; }
 .btn.stop:hover { background: #dc2626; }
 
 .status-section { display: flex; align-items: center; }
 .status-badge { font-size: 0.7rem; font-weight: 700; padding: 5px 12px; border-radius: 20px; text-transform: uppercase; letter-spacing: 0.5px; background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1); white-space: nowrap; }
-.status-badge.running { color: #60a5fa; border-color: rgba(96,165,250,0.3); }
+.status-badge.running { color: #f97316; border-color: rgba(249,115,22,0.3); }
 .status-badge.hunter_wins { color: #f87171; border-color: rgba(248,113,113,0.3); background: rgba(248,113,113,0.1); }
 .status-badge.prey_escapes { color: #34d399; border-color: rgba(52,211,153,0.3); background: rgba(52,211,153,0.1); }
 .status-badge.match_over { color: #facc15; border-color: rgba(250,204,21,0.3); background: rgba(250,204,21,0.1); }
@@ -58,7 +58,7 @@ body, html { width: 100vw; height: 100vh; overflow: hidden; font-family: 'Inter'
   cursor: pointer; transition: all 0.2s; font-family: inherit;
 }
 .mode-tab:hover:not(:disabled) { color: #ccc; background: rgba(255,255,255,0.08); }
-.mode-tab.active { color: #fff; background: rgba(96,165,250,0.15); border-color: rgba(96,165,250,0.3); }
+.mode-tab.active { color: #fff; background: rgba(249,115,22,0.15); border-color: rgba(249,115,22,0.3); }
 .mode-tab:disabled { opacity: 0.5; cursor: not-allowed; }
 
 .agent-counts { display: flex; gap: 16px; margin-top: 8px; }
@@ -105,7 +105,7 @@ body, html { width: 100vw; height: 100vh; overflow: hidden; font-family: 'Inter'
   color: #aaa; padding: 6px 14px; border-radius: 10px; font-size: 0.7rem; font-weight: 600; cursor: pointer; transition: all 0.25s; font-family: inherit;
 }
 .tab-btn:hover { background: rgba(30,30,36,0.9); color: #fff; }
-.tab-btn.active { color: #fff; background: rgba(30,30,36,0.95); border-color: rgba(96,165,250,0.3); }
+.tab-btn.active { color: #fff; background: rgba(30,30,36,0.95); border-color: rgba(249,115,22,0.3); }
 
 /* ─── Bottom Panels ─── */
 .bottom-panels { pointer-events: auto; position: fixed; bottom: 46px; left: 0; right: 0; display: flex; gap: 10px; justify-content: center; max-height: 50vh; z-index: 19; padding: 0 14px; }
@@ -150,3 +150,69 @@ body, html { width: 100vw; height: 100vh; overflow: hidden; font-family: 'Inter'
 .agent-pos { font-family: 'JetBrains Mono', monospace; font-size: 0.6rem; color: #666; min-width: 45px; }
 .agent-acc { font-weight: 700; font-size: 0.65rem; }
 .agent-dead-tag { font-size: 0.8rem; }
+
+/* ─── Countdown Overlay ─── */
+.countdown-overlay {
+  position: fixed;
+  top: 0; left: 0; width: 100%; height: 100%;
+  z-index: 100;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(0, 0, 0, 0.7);
+  backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+  pointer-events: none;
+}
+.countdown-number {
+  font-family: 'Inter', system-ui, sans-serif;
+  font-size: 8rem;
+  font-weight: 800;
+  color: #f97316;
+  text-shadow: 0 0 60px rgba(249, 115, 22, 0.5), 0 0 120px rgba(249, 115, 22, 0.2);
+  animation: countdownPop 0.7s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+  letter-spacing: -4px;
+}
+.countdown-number.countdown-go {
+  font-size: 6rem;
+  color: #4ade80;
+  text-shadow: 0 0 60px rgba(74, 222, 128, 0.5), 0 0 120px rgba(74, 222, 128, 0.2);
+  letter-spacing: 6px;
+}
+.countdown-matchup {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 24px;
+  animation: matchupSlide 0.8s ease-out forwards;
+}
+.countdown-model {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 1.4rem;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+}
+.countdown-model.hunter-model {
+  color: #f87171;
+  text-shadow: 0 0 20px rgba(248, 113, 113, 0.4);
+}
+.countdown-model.prey-model {
+  color: #22d3ee;
+  text-shadow: 0 0 20px rgba(34, 211, 238, 0.4);
+}
+.countdown-vs {
+  font-family: 'Inter', system-ui, sans-serif;
+  font-size: 1rem;
+  font-weight: 800;
+  color: #f97316;
+  text-shadow: 0 0 16px rgba(249, 115, 22, 0.5);
+  letter-spacing: 3px;
+}
+@keyframes matchupSlide {
+  0% { opacity: 0; transform: translateY(20px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+@keyframes countdownPop {
+  0% { transform: scale(2.5); opacity: 0; filter: blur(8px); }
+  50% { transform: scale(0.9); opacity: 1; filter: blur(0); }
+  70% { transform: scale(1.05); }
+  100% { transform: scale(1); opacity: 1; filter: blur(0); }
+}

@@ -75,6 +75,11 @@ export const useGameStore = create((set, get) => ({
 
   startGame: () => {
     const s = get();
+    if (!s.apiKey || s.apiKey.trim().length < 10) {
+      get().addLog('system', 'Invalid API Key — please enter a valid Groq API key to start.');
+      set({ gameState: 'error' });
+      return;
+    }
     const mode = s.mode;
     const hCount = mode === 'classic' ? 1 : s.hunterCount;
     const pCount = mode === 'classic' ? 1 : s.preyCount;
@@ -131,14 +136,15 @@ export const useGameStore = create((set, get) => ({
     if (aliveAgents.length < 2) { set({ gameState: 'idle' }); return; }
 
     // Get actually reachable cells via BFS (guaranteed walkable paths)
-    const getReachable = (pos) => getReachableBFS(pos, state.maxMoves);
+    const getReachable = (pos, team) => getReachableBFS(pos, team === 'hunter' ? state.maxMoves : Math.max(1, state.maxMoves - 2));
 
     try {
       const promises = aliveAgents.map(agent => {
         const teammates = aliveAgents.filter(a => a.id !== agent.id && a.team === agent.team);
         const enemies = aliveAgents.filter(a => a.team !== agent.team);
 
-        const reachable = getReachable({ x: agent.x, y: agent.y });
+        const agentMaxMoves = agent.team === 'hunter' ? state.maxMoves : Math.max(1, state.maxMoves - 2);
+        const reachable = getReachable({ x: agent.x, y: agent.y }, agent.team);
 
         return askAgent(key, agent.model, {
           mode, agentId: agent.id, label: agent.label, role: agent.role, team: agent.team,
@@ -147,12 +153,17 @@ export const useGameStore = create((set, get) => ({
           enemies: enemies.map(e => ({ id: e.id, label: e.label, x: e.x, y: e.y, team: e.team })),
           teamSize: teammates.length + 1, turn: turnNum,
           maxTurns: state.maxTurns,
-          maxMoves: state.maxMoves,
+          maxMoves: agentMaxMoves,
           reachableSample: reachable.slice(0, 20),
-        }, allValid, state.logs).catch(e => ({
-          thought: 'API error: ' + String(e?.message || e),
-          target_x: agent.x, target_y: agent.y, _error: true
-        }));
+        }, allValid, state.logs).catch(e => {
+          // Auth errors must stop the game
+          if (String(e?.message).startsWith('AUTH_INVALID')) throw e;
+          // All other errors — fallback to current position
+          return {
+            thought: 'API error: ' + String(e?.message || e),
+            target_x: agent.x, target_y: agent.y, _error: true
+          };
+        });
       });
 
       const results = await Promise.all(promises);
@@ -176,17 +187,18 @@ export const useGameStore = create((set, get) => ({
         const agentIdx = newAgents.findIndex(a => a.id === agent.id);
         if (agentIdx === -1) return;
 
+        const agentMaxMoves = agent.team === 'hunter' ? state.maxMoves : Math.max(1, state.maxMoves - 2);
         const tx = parseInt(res.target_x), ty = parseInt(res.target_y);
         const thought = res.thought || '';
-        const reachable = getReachable({ x: agent.x, y: agent.y });
+        const reachable = getReachable({ x: agent.x, y: agent.y }, agent.team);
 
         // Check if agent is trying to stay in place
         const stayingInPlace = (tx === agent.x && ty === agent.y);
 
         if (!isNaN(tx) && !isNaN(ty) && isValidCell(tx, ty) && !stayingInPlace) {
           // Try direct path first
-          const path = findPath({ x: agent.x, y: agent.y }, { x: tx, y: ty }, state.maxMoves);
-          if (path && path.length > 1 && path.length <= state.maxMoves + 1) {
+          const path = findPath({ x: agent.x, y: agent.y }, { x: tx, y: ty }, agentMaxMoves);
+          if (path && path.length > 1 && path.length <= agentMaxMoves + 1) {
             const dest = moveAgent(agentIdx, agent.id, path);
             newMetrics[agent.id] = { ...(newMetrics[agent.id] || {}), validMoves: (newMetrics[agent.id]?.validMoves || 0) + 1 };
             get().addLog(agent.id, `${agent.label} walks to (${dest.x},${dest.y}) [${path.length - 1} steps]`, thought);
@@ -197,8 +209,8 @@ export const useGameStore = create((set, get) => ({
             );
             let moved = false;
             for (const candidate of sorted.slice(0, 8)) {
-              const fallbackPath = findPath({ x: agent.x, y: agent.y }, candidate, state.maxMoves);
-              if (fallbackPath && fallbackPath.length > 1 && fallbackPath.length <= state.maxMoves + 1) {
+              const fallbackPath = findPath({ x: agent.x, y: agent.y }, candidate, agentMaxMoves);
+              if (fallbackPath && fallbackPath.length > 1 && fallbackPath.length <= agentMaxMoves + 1) {
                 const dest = moveAgent(agentIdx, agent.id, fallbackPath);
                 newMetrics[agent.id] = { ...(newMetrics[agent.id] || {}), validMoves: (newMetrics[agent.id]?.validMoves || 0) + 1 };
                 get().addLog(agent.id, `${agent.label} walks toward (${tx},${ty}) → reached (${dest.x},${dest.y})`, thought);
@@ -210,7 +222,7 @@ export const useGameStore = create((set, get) => ({
               // Last resort: pick any reachable cell
               const randomCell = reachable[Math.floor(Math.random() * Math.min(reachable.length, 10))];
               if (randomCell) {
-                const rPath = findPath({ x: agent.x, y: agent.y }, randomCell, state.maxMoves);
+                const rPath = findPath({ x: agent.x, y: agent.y }, randomCell, agentMaxMoves);
                 if (rPath && rPath.length > 1) {
                   const dest = moveAgent(agentIdx, agent.id, rPath);
                   get().addLog(agent.id, `${agent.label} moves to (${dest.x},${dest.y}) [fallback]`, thought);
@@ -227,7 +239,7 @@ export const useGameStore = create((set, get) => ({
             const pick = options.length > 0
               ? options[Math.floor(Math.random() * options.length)]
               : reachable[Math.floor(Math.random() * reachable.length)];
-            const forcedPath = findPath({ x: agent.x, y: agent.y }, pick, state.maxMoves);
+            const forcedPath = findPath({ x: agent.x, y: agent.y }, pick, agentMaxMoves);
             if (forcedPath && forcedPath.length > 1) {
               const dest = moveAgent(agentIdx, agent.id, forcedPath);
               get().addLog(agent.id, `${agent.label} forced move to (${dest.x},${dest.y})`, thought);
